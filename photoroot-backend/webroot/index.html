@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link href="/index.css" rel="stylesheet">
+</head>
+<body>
+    <div class="hello">hello photoroot</div>
+    <h2>上传文件</h2>
+    <div>
+        <input id="group" type="text" placeholder="图片分组">
+        <input type="file" id="files" multiple>
+        <button id="update">上传</button>
+    </div>
+    <script>
+        // 文件上传
+        function uploadFiles(group) {
+            var fileInput = document.getElementById('files');
+            var files = fileInput.files;
+            var formData = new FormData();
+
+            for (var i = 0; i < files.length; i++) {
+                var file = files[i];
+                formData.append('files', file, file.name);
+                console.log(`add file ${file.name}`);
+            }
+            var xhr = new XMLHttpRequest();
+            // 上传进度监听器
+            xhr.upload.addEventListener('progress', function(event) {
+                if (event.lengthComputable) {
+                    var percentComplete = (event.loaded / event.total) * 100;
+                    console.log('总体上传进度：' + percentComplete + '%');
+                } else {
+                    console.log('上传进度未知');
+                }
+            });
+
+            // 上传完成处理
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    console.log('上传完成');
+                } else {
+                    console.log('上传失败');
+                }
+            };
+
+            // 设置请求
+            xhr.open('POST', `/upload/${group}`, true);
+            xhr.send(formData);
+        }
+        document.getElementById("update").addEventListener("click", function() {
+            uploadFiles(document.getElementById("group").value);
+        });
+    </script>
+</body>
+</html>
