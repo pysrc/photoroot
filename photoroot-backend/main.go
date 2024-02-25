@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/rand"
-	"embed"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -28,9 +27,6 @@ var WEBROOT = "webroot"
 
 // 会话持久化保存目录
 var SESSIONS_DIR = ".data/sessions"
-
-//go:embed login/*
-var loginFiles embed.FS
 
 // 会话过期时间默认一个月
 var SessionExpires = 30 * 24 * time.Hour
@@ -85,68 +81,44 @@ func GetPathList(paths string, prefix string) []string {
 	return strings.Split(path, "/")
 }
 
-func logincss(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "GET" {
-		// 设置Content-Type头部，告诉浏览器返回的是HTML内容
-		w.Header().Set("Content-Type", "text/css")
-		// 返回本地的HTML文件，这里假设HTML文件名为index.html，位于当前目录下
-		htmlfs, err := loginFiles.Open("login/bootstrap.min.css")
-		if err != nil {
-			println(err)
-			return
-		}
-		html, err := io.ReadAll(htmlfs)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		w.Write(html)
-	}
-}
-
 // 登录
 func login(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "GET" {
-		// 设置Content-Type头部，告诉浏览器返回的是HTML内容
-		w.Header().Set("Content-Type", "text/html")
-		// 返回本地的HTML文件，这里假设HTML文件名为index.html，位于当前目录下
-		htmlfs, err := loginFiles.Open("login/index.html")
-		if err != nil {
-			println(err)
-			return
-		}
-		html, err := io.ReadAll(htmlfs)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		w.Write(html)
-	}
 	if r.Method == "POST" {
 		// 假设认证通过
-		username := r.PostFormValue("username")
-		var usr = user_map[username]
+		type LoginData struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		var data LoginData
+		err := json.NewDecoder(r.Body).Decode(&data)
+		if err != nil {
+			return
+		}
+		var usr = user_map[data.Username]
 		if usr == nil {
 			// 用户不存在
 			AuthError(w, r)
 		} else {
 
-			if Verify(usr.Password, r.PostFormValue("password")) {
+			if Verify(usr.Password, data.Password) {
 				// 认证通过
 				var session_id = Uuid()
 				// 会话过期时间
 				var expires = time.Now().Add(SessionExpires)
 				session_map[session_id] = &UserSession{
 					SessionId: session_id,
-					Name:      username,
+					Name:      data.Username,
 					Expires:   expires.Unix(),
 				}
 				session_save(session_id)
 				cookie_session_id := http.Cookie{Name: "session_id", Value: session_id, Expires: expires}
 				http.SetCookie(w, &cookie_session_id)
-				cookie_username := http.Cookie{Name: "username", Value: username, Expires: expires}
+				cookie_username := http.Cookie{Name: "username", Value: data.Username, Expires: expires}
 				http.SetCookie(w, &cookie_username)
-				http.Redirect(w, r, "/", http.StatusSeeOther)
+				WebResponse(w, true, map[string]string{
+					"token": session_id,
+				})
+				return
 			} else {
 				//认证失败
 				AuthError(w, r)
@@ -166,7 +138,7 @@ func logout(w http.ResponseWriter, r *http.Request) {
 	}
 	delete(session_map, session.SessionId)
 	os.Remove(SESSIONS_DIR + "/" + session.SessionId + ".json")
-	AuthError(w, r)
+	WebResponse(w, true, "ok")
 }
 
 // 修改密码
@@ -338,49 +310,52 @@ func upload(w http.ResponseWriter, r *http.Request) {
 }
 
 func AuthError(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	WebResponse(w, false, "Permission authentication failed")
 }
 
 func Auth(w http.ResponseWriter, r *http.Request) (bool, *UserSession) {
 	// 需要权限控制的
-	var cookie, err = r.Cookie("session_id")
-	if err != nil {
-		AuthError(w, r)
-		return false, nil
-	} else {
-		var session_id = cookie.Value
-		if session, ok := session_map[session_id]; ok {
-			// 校验session是否过期
-			if session.Expires < time.Now().Unix() {
-				delete(session_map, session_id)
-				os.Remove(SESSIONS_DIR + "/" + session_id + ".json")
-				return false, nil
-			}
-			if session == nil {
-				// 用户未登录
-				AuthError(w, r)
-				return false, nil
-			} else {
-				// 用户已登录
-				if strings.HasPrefix(r.URL.Path, "/images/") {
-					// 使用images下的资源需要判断权限
-					if strings.HasPrefix(r.URL.Path, "/images/"+session.Name+"/") {
-						return true, session
-					} else {
-						// 无权限
-						AuthError(w, r)
-						return false, nil
-					}
-				} else {
-					// 其余资源有权限
-					return true, session
-				}
-			}
-		} else {
+	// 首先检查token是否存在
+	session_id := r.Header.Get("token")
+	if session_id == "" {
+		// 不存在从cookie里取
+		var cookie, err = r.Cookie("session_id")
+		if err != nil {
 			AuthError(w, r)
 			return false, nil
 		}
-
+		session_id = cookie.Value
+	}
+	if session, ok := session_map[session_id]; ok {
+		// 校验session是否过期
+		if session.Expires < time.Now().Unix() {
+			delete(session_map, session_id)
+			os.Remove(SESSIONS_DIR + "/" + session_id + ".json")
+			return false, nil
+		}
+		if session == nil {
+			// 用户未登录
+			AuthError(w, r)
+			return false, nil
+		} else {
+			// 用户已登录
+			if strings.HasPrefix(r.URL.Path, "/images/") {
+				// 使用images下的资源需要判断权限
+				if strings.HasPrefix(r.URL.Path, "/images/"+session.Name+"/") {
+					return true, session
+				} else {
+					// 无权限
+					AuthError(w, r)
+					return false, nil
+				}
+			} else {
+				// 其余资源有权限
+				return true, session
+			}
+		}
+	} else {
+		AuthError(w, r)
+		return false, nil
 	}
 
 }
@@ -525,24 +500,6 @@ func Verify(hashedPassword string, enteredPassword string) bool {
 	}
 }
 
-func auth_static(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/login") ||
-			strings.HasSuffix(r.URL.Path, ".css") ||
-			strings.HasSuffix(r.URL.Path, ".js") {
-			http.StripPrefix("/", next).ServeHTTP(w, r)
-		} else {
-			// 检查是否登录
-			if suc, _ := Auth(w, r); suc {
-				next.ServeHTTP(w, r)
-			} else {
-				// 未登录，重定向到登录页面
-				AuthError(w, r)
-			}
-		}
-	})
-}
-
 func main() {
 	var bind, passwd string
 	var genpass bool
@@ -564,10 +521,9 @@ func main() {
 	init_work()
 	go Job()
 	// 设置路由
-	http.Handle("/", auth_static(http.FileServer(http.Dir(WEBROOT))))
+	http.Handle("/", http.FileServer(http.Dir(WEBROOT)))
 	http.HandleFunc("/upload/{groupname}", upload)
 	http.HandleFunc("/login", login)
-	http.HandleFunc("/login/bootstrap.min.css", logincss)
 	http.HandleFunc("/logout", logout)
 	http.HandleFunc("/user-password-update", user_password_update)
 	http.HandleFunc("/new-user", new_user)

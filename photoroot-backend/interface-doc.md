@@ -1,11 +1,93 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-    <link href="/index.css" rel="stylesheet">
-</head>
+# 接口文档
+
+## 登录
+
+```shell
+curl --location 'http://127.0.0.1:11990/login' \
+--header 'Content-Type: application/json' \
+--header 'Cookie: session_id=cc3fe936-ea11-4cc2-9d16-fc93358c531a; username=root' \
+--data '{
+    "username": "root",
+    "password": "root"
+}'
+```
+
+成功响应
+
+```json
+{
+    "data": {
+        "token": "cc3fe936-ea11-4cc2-9d16-fc93358c531a"
+    },
+    "success": true
+}
+```
+
+失败响应
+
+```json
+{
+    "data": "Permission authentication failed",
+    "success": false
+}
+```
+
+## 登出
+
+```shell
+curl --location 'http://127.0.0.1:11990/logout' \
+--header 'token: cc3fe936-ea11-4cc2-9d16-fc93358c531a'
+```
+
+成功响应
+
+```json
+{
+    "data": "ok",
+    "success": true
+}
+```
+
+失败响应
+
+```json
+{
+    "data": "Permission authentication failed",
+    "success": false
+}
+```
+
+## 获取用户图片分组
+
+```shell
+curl --location 'http://127.0.0.1:11990/groups' \
+--header 'token: 2f38acba-f464-4c25-8c02-08ddf4df3252'
+```
+
+成功响应
+
+```json
+{
+    "data": [
+        "工作",
+        "日常"
+    ],
+    "success": true
+}
+```
+
+失败响应
+
+```json
+{
+    "data": "Permission authentication failed",
+    "success": false
+}
+```
+
+## 上传示例(支持多文件上传)
+
+```html
 <body>
     <div class="hello">hello photoroot</div>
     <span>
@@ -60,4 +142,5 @@
         });
     </script>
 </body>
-</html>
+```
+
