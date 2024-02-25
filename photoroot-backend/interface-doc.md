@@ -5,7 +5,6 @@
 ```shell
 curl --location 'http://127.0.0.1:11990/login' \
 --header 'Content-Type: application/json' \
---header 'Cookie: session_id=cc3fe936-ea11-4cc2-9d16-fc93358c531a; username=root' \
 --data '{
     "username": "root",
     "password": "root"
